@@ -45,6 +45,26 @@ def draw_node_to_png(relative_location, image):
     r = 2
     draw.ellipse((x-r, y-r, x+r, y+r), fill=(0,0,0))
 
+def draw_node_to_png2(relative_location, image):
+  x = int(np.floor(image.size[0]*relative_location[0]))
+  y = int(np.floor(image.size[1]*relative_location[1]))
+  # image.putpixel((x,y), (255,255,255))
+  # image.putpixel((x,y), (0))
+  draw = ImageDraw.Draw(image)
+  r = 5
+  draw.ellipse((x-r, y-r, x+r, y+r), fill=(0,255,255))
+  r = 2
+  draw.ellipse((x-r, y-r, x+r, y+r), fill=(0,0,0))
+
+def draw_edge_to_png(prev_rel_loc, relative_location, image):
+  x0 = int(np.floor(image.size[0]*prev_rel_loc[0]))
+  y0 = int(np.floor(image.size[1]*prev_rel_loc[1]))
+  x1 = int(np.floor(image.size[0]*relative_location[0]))
+  y1 = int(np.floor(image.size[1]*relative_location[1]))
+  draw = ImageDraw.Draw(image)
+  # print 'drawing edge between: ', prev_node_xy, ' and ', node_xy
+  draw.line((x0, y0, x1, y1), fill=(0,150,150), width=2)
+
 def is_node_hospital(node):
   is_hospital = False
   for tag in node.iter('tag'):
@@ -94,20 +114,16 @@ root = tree.getroot()           # print root.attrib
 # for child in root:
 # print child.tag, child.attrib
 
-for node in root.iter('node'):
-  print node.attrib
-  print is_node_hospital(node)
+# for node in root.iter('node'):
+  # print node.attrib
+  # print is_node_hospital(node)
 
 osm_bounds = root.find('bounds')
 map_bounds = parse_bounds(osm_bounds)
 
-# for neighbor in root.iter('tag'):
-#     print neighbor.attrib
-#     print neighbor.get('v')
-
 # y direction -> latitude
 # x direction -> longitude
-zoom = 16
+zoom = 19
 tile_nw = deg2num(map_bounds[1][0], map_bounds[0][1], zoom)
 tile_se = deg2num(map_bounds[0][0], map_bounds[1][1], zoom)
 print 'tile_nw_xy', tile_nw
@@ -136,17 +152,43 @@ for tile_x in range(tile_nw[0], tile_se[0]+1):
                                    0 + 256*(tile_y - tile_nw[1])))
 
 
-node_lat = 10.4938379
-node_lon = -66.8522287
-
-node_xy = deg2pos(node_lat, node_lon, zoom)
-# print node_xy
-rel_location = relative_location(node_xy, tile_nw, tile_se)
-# print rel_location
-
 map_image_node = map_image.copy()
-draw_node_to_png(rel_location, map_image_node)
 
-map_image.show()
+# node_lat = 10.4938379
+# node_lon = -66.8522287
+# node_xy = deg2pos(node_lat, node_lon, zoom)
+# print node_xy
+# rel_location = relative_location(node_xy, tile_nw, tile_se)
+# print rel_location
+# draw_node_to_png(rel_location, map_image_node)
+
+for node in root.iter('node'):
+  # print node.attrib
+  node_lat = float(node.get('lat'))
+  node_lon = float(node.get('lon'))
+  node_xy = deg2pos(node_lat, node_lon, zoom)
+  rel_location = relative_location(node_xy, tile_nw, tile_se)
+  draw_node_to_png(rel_location, map_image_node)
+
+for way in root.iter('way'):
+  for tag in way.iter('tag'):
+    if tag.get('k') == "highway":
+      prev_node_xy = None
+      for nd in way.iter('nd'):
+        ref = nd.get('ref')
+        for node in root.iter('node'):
+          if node.get('id') == ref:
+              node_lat = float(node.get('lat'))
+              node_lon = float(node.get('lon'))
+              node_xy = deg2pos(node_lat, node_lon, zoom)
+              rel_location = relative_location(node_xy, tile_nw, tile_se)
+              draw_node_to_png2(rel_location, map_image_node)
+              if prev_node_xy is not None:
+                prev_rel_loc = relative_location(prev_node_xy, tile_nw, tile_se)
+                draw_edge_to_png(prev_rel_loc, rel_location, map_image_node)
+              break
+        prev_node_xy = node_xy
+
+# map_image.show()
 map_image.save("map_image_empty.png")
 map_image_node.save("map_image_node.png")
