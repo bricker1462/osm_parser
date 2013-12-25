@@ -6,6 +6,7 @@ import urllib
 from PIL import Image
 from PIL import ImageDraw
 from sys import exit
+from pyx import *
 # sudo apt-get install imagemagick
 
 def deg2pos(lat_deg, lon_deg, zoom):
@@ -64,6 +65,14 @@ def draw_edge_to_png(prev_rel_loc, relative_location, image):
   draw = ImageDraw.Draw(image)
   # print 'drawing edge between: ', prev_node_xy, ' and ', node_xy
   draw.line((x0, y0, x1, y1), fill=(0,150,150), width=2)
+
+def draw_edge_to_pdf(prev_node_xy, node_xy, pdf, tile_nw, tile_se):
+  # bottom/left nw = center / requires flip y axis
+  pdf.stroke(path.line(prev_node_xy[0] - tile_nw[0],
+                       -1*(prev_node_xy[1] - tile_se[1] - 1),
+                       node_xy[0]      - tile_nw[0],
+                       -1*(node_xy[1]      - tile_se[1] - 1) ))
+  pdf.stroke(path.line(0,0,1,1))
 
 def is_node_hospital(node):
   is_hospital = False
@@ -170,6 +179,10 @@ for node in root.iter('node'):
   rel_location = relative_location(node_xy, tile_nw, tile_se)
   draw_node_to_png(rel_location, map_image_node)
 
+
+c = canvas.canvas()
+c.insert(bitmap.bitmap(0, 0, map_image_node, height=(tile_se[1] - tile_nw[1] + 1)))
+
 for way in root.iter('way'):
   for tag in way.iter('tag'):
     if tag.get('k') == "highway":
@@ -184,10 +197,16 @@ for way in root.iter('way'):
               rel_location = relative_location(node_xy, tile_nw, tile_se)
               draw_node_to_png2(rel_location, map_image_node)
               if prev_node_xy is not None:
+                draw_edge_to_pdf(prev_node_xy, node_xy, c, tile_nw, tile_se)
+                # c.stroke(path.line(0, 0, 1, 1))
                 prev_rel_loc = relative_location(prev_node_xy, tile_nw, tile_se)
                 draw_edge_to_png(prev_rel_loc, rel_location, map_image_node)
               break
         prev_node_xy = node_xy
+  c.writePDFfile("map_image_node")
+  raw_input("Press a key to continue...")
+
+# c.writePDFfile("map_image_node")
 
 # map_image.show()
 map_image.save("map_image_empty.png")
