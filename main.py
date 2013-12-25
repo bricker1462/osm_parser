@@ -11,8 +11,9 @@ from pyx import *
 from pygame.locals import *
 # sudo apt-get install imagemagick
 
-
+#################
 ### FUNCTIONS ###
+#################
 def deg2pos(lat_deg, lon_deg, zoom):
   lat_rad = math.radians(lat_deg)
   n = 2.0 ** zoom
@@ -34,21 +35,64 @@ def num2deg(xtile, ytile, zoom):
   lat_deg = math.degrees(lat_rad)
   return (lat_deg, lon_deg)
 
+def get_mouse_deg(mouse_x, mouse_y, image, tile_nw, tile_se, zoom):
+  mouse_map_x = (float(mouse_x) / image.size[0]) * (tile_se[0] - tile_nw[0] + 1) + tile_nw[0]
+  mouse_map_y = (float(mouse_y) / image.size[1]) * (tile_se[1] - tile_nw[1] + 1) + tile_nw[1]
+  (mouse_lat, mouse_lon) = num2deg(mouse_map_x, mouse_map_y, zoom)
+  # print mouse_lat, mouse_lon
+  # print mouse_map_x, mouse_map_y
+  return (mouse_lat, mouse_lon)
+
+def get_node(mouse_lat, mouse_lon, threshold, root):
+  min_distance = 1.0
+  min_node_id  = None
+  for node in root.iter('node'):
+    node_lat = float(node.get('lat'))
+    node_lon = float(node.get('lon'))
+    node_id  = node.get('id')
+    distance = math.sqrt(pow(mouse_lat - node_lat, 2) + pow(mouse_lon - node_lon, 2))
+    if (distance < min_distance):
+      # print "found a new minimum distance: ", distance
+      min_distance = distance
+      min_node_id  = node_id
+  # print "minimum node_id: ", min_node_id, " distance: ", min_distance
+  if min_distance < threshold:
+    return min_node_id
+  else:
+    return None
+
+def print_node_info(node_id, root):
+  for node in root.iter('node'):
+    current_node_id = node.get('id')
+    if node_id == current_node_id:
+      print "found a match in node: ", node.get('id')
+  for way in root.iter('way'):
+    for nd in way.iter('nd'):
+      current_node_id = nd.get('ref')
+      if node_id == current_node_id:
+        print "found a match in way: ", way.get('id')
+  # for rel in root.iter('relation'):
+  #   for member in rel.iter('member'):
+  #     current_node_id = member.get('ref')
+  #     if node_id == current_node_id:
+  #       print "found a match in relation: ", rel.get('id')
+  print "----------------------------------------"
+
 def relative_location(node_xy, tile_nw, tile_se): # top/left corner = center
-    percentage_x = (node_xy[0] - tile_nw[0]) / (tile_se[0] - tile_nw[0] + 1)
-    percentage_y = (node_xy[1] - tile_nw[1]) / (tile_se[1] - tile_nw[1] + 1)
-    return (percentage_x, percentage_y)
+  percentage_x = (node_xy[0] - tile_nw[0]) / (tile_se[0] - tile_nw[0] + 1)
+  percentage_y = (node_xy[1] - tile_nw[1]) / (tile_se[1] - tile_nw[1] + 1)
+  return (percentage_x, percentage_y)
 
 def draw_node_to_png(relative_location, image):
-    x = int(np.floor(image.size[0]*relative_location[0]))
-    y = int(np.floor(image.size[1]*relative_location[1]))
-    # image.putpixel((x,y), (255,255,255))
-    # image.putpixel((x,y), (0))
-    draw = ImageDraw.Draw(image)
-    r = 5
-    draw.ellipse((x-r, y-r, x+r, y+r), fill=(255,255,255))
-    r = 2
-    draw.ellipse((x-r, y-r, x+r, y+r), fill=(0,0,0))
+  x = int(np.floor(image.size[0]*relative_location[0]))
+  y = int(np.floor(image.size[1]*relative_location[1]))
+  # image.putpixel((x,y), (255,255,255))
+  # image.putpixel((x,y), (0))
+  draw = ImageDraw.Draw(image)
+  r = 5
+  draw.ellipse((x-r, y-r, x+r, y+r), fill=(255,255,255))
+  r = 2
+  draw.ellipse((x-r, y-r, x+r, y+r), fill=(0,0,0))
 
 def draw_node_to_png2(relative_location, image):
   x = int(np.floor(image.size[0]*relative_location[0]))
@@ -118,8 +162,9 @@ def download_url(url_name):
     print "downloading: ", url_name
     urllib.urlretrieve(url_name, local_path)
 
-
+##################
 ### TREE PARSE ###
+##################
 tree = ET.parse('map.osm')      # print root.tag
 root = tree.getroot()           # print root.attrib
 # for child in root:
@@ -150,7 +195,9 @@ for tile_x in range(tile_nw[0], tile_se[0]+1):
     tile_url = build_url(zoom, tile_x, tile_y)
     download_url(tile_url)
 
+#####################
 ### BUILD MAP PNG ###
+#####################
 map_image = Image.new("RGB",
                       ((tile_se[0]-tile_nw[0] + 1)*256,
                        (tile_se[1]-tile_nw[1] + 1)*256))
@@ -176,8 +223,9 @@ for node in root.iter('node'):
   rel_location = relative_location(node_xy, tile_nw, tile_se)
   draw_node_to_png(rel_location, map_image_node)
 
-
+######################
 ### BUILD PDF FILE ###
+######################
 c = canvas.canvas()
 c.insert(bitmap.bitmap(0, 0, map_image_node, height=(tile_se[1] - tile_nw[1] + 1)))
 
@@ -207,7 +255,10 @@ for way in root.iter('way'):
 # c.writePDFfile("map_image_node") # PDF / EPS
 map_image_node.save("map_image_node.png")
 
+
+##########################
 ### INTERACTIVE WINDOW ###
+##########################
 fps = 60
 pygame.init() # http://www.pygame.org/docs/ref/draw.html
 pygame.event.set_allowed([QUIT, KEYDOWN, KEYUP, MOUSEMOTION])
@@ -232,11 +283,17 @@ while True:
   for event in pygame.event.get():
     if event.type == pygame.QUIT:
       exit(0)
+    if event.type == pygame.MOUSEBUTTONDOWN:
+      (mouse_x, mouse_y) = pygame.mouse.get_pos()
+      (mouse_lat, mouse_lon) = get_mouse_deg(mouse_x, mouse_y, map_image, tile_nw, tile_se, zoom)
+      node_id = get_node(mouse_lat, mouse_lon, 1.5e-5, root)
+      print_node_info(node_id, root)
+      # print "Node clicked is: ", node_id
     else:
       # print event
       window.blit(image_surf, old_rect, old_rect)
       (mouse_x, mouse_y) = pygame.mouse.get_pos()
-      rect = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 20, 0)
+      rect = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 2, 0)
       rect.inflate_ip(10, 10)
       pygame.display.update(rect.union(old_rect))
       old_rect = rect
