@@ -3,12 +3,16 @@ import numpy as np
 import math
 import os.path
 import urllib
+import pygame
 from PIL import Image
 from PIL import ImageDraw
 from sys import exit
 from pyx import *
+from pygame.locals import *
 # sudo apt-get install imagemagick
 
+
+### FUNCTIONS ###
 def deg2pos(lat_deg, lon_deg, zoom):
   lat_rad = math.radians(lat_deg)
   n = 2.0 ** zoom
@@ -114,10 +118,8 @@ def download_url(url_name):
     print "downloading: ", url_name
     urllib.urlretrieve(url_name, local_path)
 
-# test_url = build_url(15, 3, 7)
-# download_url(test_url)
-# exit()
 
+### TREE PARSE ###
 tree = ET.parse('map.osm')      # print root.tag
 root = tree.getroot()           # print root.attrib
 # for child in root:
@@ -148,6 +150,7 @@ for tile_x in range(tile_nw[0], tile_se[0]+1):
     tile_url = build_url(zoom, tile_x, tile_y)
     download_url(tile_url)
 
+### BUILD MAP PNG ###
 map_image = Image.new("RGB",
                       ((tile_se[0]-tile_nw[0] + 1)*256,
                        (tile_se[1]-tile_nw[1] + 1)*256))
@@ -159,17 +162,11 @@ for tile_x in range(tile_nw[0], tile_se[0]+1):
     image256x256 = Image.open(tile_path)
     map_image.paste(image256x256, (0 + 256*(tile_x - tile_nw[0]),
                                    0 + 256*(tile_y - tile_nw[1])))
+# map_image.show()
+map_image.save("map_image_empty.png")
 
-
+### DRAW NODES TO PNG ###
 map_image_node = map_image.copy()
-
-# node_lat = 10.4938379
-# node_lon = -66.8522287
-# node_xy = deg2pos(node_lat, node_lon, zoom)
-# print node_xy
-# rel_location = relative_location(node_xy, tile_nw, tile_se)
-# print rel_location
-# draw_node_to_png(rel_location, map_image_node)
 
 for node in root.iter('node'):
   # print node.attrib
@@ -180,6 +177,7 @@ for node in root.iter('node'):
   draw_node_to_png(rel_location, map_image_node)
 
 
+### BUILD PDF FILE ###
 c = canvas.canvas()
 c.insert(bitmap.bitmap(0, 0, map_image_node, height=(tile_se[1] - tile_nw[1] + 1)))
 
@@ -203,11 +201,62 @@ for way in root.iter('way'):
                 draw_edge_to_png(prev_rel_loc, rel_location, map_image_node)
               break
         prev_node_xy = node_xy
-  c.writePDFfile("map_image_node")
-  raw_input("Press a key to continue...")
+  # c.writePDFfile("map_image_node")
+  # raw_input("Press a key to continue...")
 
-# c.writePDFfile("map_image_node")
-
-# map_image.show()
-map_image.save("map_image_empty.png")
+# c.writePDFfile("map_image_node") # PDF / EPS
 map_image_node.save("map_image_node.png")
+
+### INTERACTIVE WINDOW ###
+fps = 60
+pygame.init() # http://www.pygame.org/docs/ref/draw.html
+pygame.event.set_allowed([QUIT, KEYDOWN, KEYUP, MOUSEMOTION])
+clock = pygame.time.Clock()
+font = pygame.font.SysFont("Arial", 16)
+flags = DOUBLEBUF
+window = pygame.display.set_mode(((tile_se[0]-tile_nw[0] + 1)*256,
+                                  (tile_se[1]-tile_nw[1] + 1)*256), pygame.HWSURFACE)#flags)
+
+window.set_alpha(None)
+image_surf = pygame.image.load("map_image_node.png").convert()
+window.blit(image_surf,(0,0))
+# pygame.draw.circle(window, (255, 0, 0), (0,0), 20, 0)
+# pygame.draw.line(window, (255, 255, 255), (0, 0), (30, 50))
+
+#draw it to the screen
+pygame.display.flip()
+
+# with input handling:
+old_rect = pygame.draw.circle(window, (255, 0, 0), (0, 0), 20, 0)
+while True:
+  for event in pygame.event.get():
+    if event.type == pygame.QUIT:
+      exit(0)
+    else:
+      # print event
+      window.blit(image_surf, old_rect, old_rect)
+      (mouse_x, mouse_y) = pygame.mouse.get_pos()
+      rect = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 20, 0)
+      rect.inflate_ip(10, 10)
+      pygame.display.update(rect.union(old_rect))
+      old_rect = rect
+      # Info and flip screen
+      # window.blit(font.render("fps: " + str(clock.get_fps()), 1, (255,255,255)), (0,0))
+      # print "fps: " + str(clock.get_fps())
+      # clock.tick(fps)
+
+# without input handling:
+# old_rect = pygame.draw.circle(window, (255, 0, 0), (0, 0), 20, 0)
+# while True:
+#   # print event
+#   pygame.event.get()
+#   window.blit(image_surf, old_rect, old_rect)
+#   (mouse_x, mouse_y) = pygame.mouse.get_pos()
+#   rect = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 20, 0)
+#   rect.inflate_ip(10, 10)
+#   pygame.display.update(rect.union(old_rect))
+#   old_rect = rect
+#   # Info and flip screen
+#   # window.blit(font.render("fps: " + str(clock.get_fps()), 1, (255,255,255)), (0,0))
+#   print "fps: " + str(clock.get_fps())
+#   clock.tick(fps)
