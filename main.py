@@ -61,6 +61,17 @@ def get_node(mouse_lat, mouse_lon, threshold, root):
   else:
     return None
 
+def get_node_xy(node_id, root, image, tile_nw, tile_se, zoom):
+    for node in root.iter('node'):
+      if node_id == node.get('id'):
+        node_lat = float(node.get('lat'))
+        node_lon = float(node.get('lon'))
+        (node_map_x, node_map_y) = deg2pos(node_lat, node_lon, zoom)
+        node_x = int((node_map_x - tile_nw[0]) / (tile_se[0] - tile_nw[0] + 1) * image.size[0])
+        node_y = int((node_map_y - tile_nw[1]) / (tile_se[1] - tile_nw[1] + 1) * image.size[1])
+        return (node_x, node_y)
+    return (0, 0)
+
 def print_node_info(node_id, root):
   for node in root.iter('node'):
     current_node_id = node.get('id')
@@ -116,11 +127,12 @@ def draw_edge_to_png(prev_rel_loc, relative_location, image):
 
 def draw_edge_to_pdf(prev_node_xy, node_xy, pdf, tile_nw, tile_se):
   # bottom/left nw = center / requires flip y axis
+  # pdf.stroke(path.line(0,0,1,1))
   pdf.stroke(path.line(prev_node_xy[0] - tile_nw[0],
                        -1*(prev_node_xy[1] - tile_se[1] - 1),
                        node_xy[0]      - tile_nw[0],
                        -1*(node_xy[1]      - tile_se[1] - 1) ))
-  pdf.stroke(path.line(0,0,1,1))
+
 
 def is_node_hospital(node):
   is_hospital = False
@@ -231,7 +243,7 @@ c.insert(bitmap.bitmap(0, 0, map_image_node, height=(tile_se[1] - tile_nw[1] + 1
 
 for way in root.iter('way'):
   for tag in way.iter('tag'):
-    if tag.get('k') == "highway":
+    if tag.get('k') == "highway" and tag.get('v') == "residential":
       prev_node_xy = None
       for nd in way.iter('nd'):
         ref = nd.get('ref')
@@ -242,9 +254,8 @@ for way in root.iter('way'):
               node_xy = deg2pos(node_lat, node_lon, zoom)
               rel_location = relative_location(node_xy, tile_nw, tile_se)
               draw_node_to_png2(rel_location, map_image_node)
-              if prev_node_xy is not None:
+              if prev_node_xy != None:
                 draw_edge_to_pdf(prev_node_xy, node_xy, c, tile_nw, tile_se)
-                # c.stroke(path.line(0, 0, 1, 1))
                 prev_rel_loc = relative_location(prev_node_xy, tile_nw, tile_se)
                 draw_edge_to_png(prev_rel_loc, rel_location, map_image_node)
               break
@@ -252,9 +263,8 @@ for way in root.iter('way'):
   # c.writePDFfile("map_image_node")
   # raw_input("Press a key to continue...")
 
-# c.writePDFfile("map_image_node") # PDF / EPS
+c.writePDFfile("map_image_node") # PDF / EPS
 map_image_node.save("map_image_node.png")
-
 
 ##########################
 ### INTERACTIVE WINDOW ###
@@ -278,7 +288,11 @@ window.blit(image_surf,(0,0))
 pygame.display.flip()
 
 # with input handling:
-old_rect = pygame.draw.circle(window, (255, 0, 0), (0, 0), 20, 0)
+old_rectangle  = pygame.draw.circle(window, (0, 0, 0), (0, 0), 20, 0)
+node_rect = pygame.draw.circle(window, (0, 0, 0), (0, 0), 20, 0)
+prev_node_rect = node_rect
+selected_node = [0, 0]
+prev_selected_node = [0, 0]
 while True:
   for event in pygame.event.get():
     if event.type == pygame.QUIT:
@@ -287,32 +301,41 @@ while True:
       (mouse_x, mouse_y) = pygame.mouse.get_pos()
       (mouse_lat, mouse_lon) = get_mouse_deg(mouse_x, mouse_y, map_image, tile_nw, tile_se, zoom)
       node_id = get_node(mouse_lat, mouse_lon, 1.5e-5, root)
-      print_node_info(node_id, root)
-      # print "Node clicked is: ", node_id
+      if node_id != None:
+        print "Node clicked is: ", node_id
+        print_node_info(node_id, root)
+        window.blit(image_surf, prev_node_rect, prev_node_rect)
+        pygame.display.update(prev_node_rect)
+        selected_node = get_node_xy(node_id, root, map_image, tile_nw, tile_se, zoom)
+        node_rect = pygame.draw.circle(window, (0, 0, 255), (selected_node[0], selected_node[1]), 10, 0)
+        pygame.display.update(node_rect)
+        prev_node_rect = node_rect
+        prev_selected_node = selected_node
     else:
       # print event
-      window.blit(image_surf, old_rect, old_rect)
+      window.blit(image_surf, old_rectangle, old_rectangle)
       (mouse_x, mouse_y) = pygame.mouse.get_pos()
-      rect = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 2, 0)
-      rect.inflate_ip(10, 10)
-      pygame.display.update(rect.union(old_rect))
-      old_rect = rect
+      rectangle = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 2, 0)
+      node_rect = pygame.draw.circle(window, (0, 0, 255), (selected_node[0], selected_node[1]), 10, 0)
+      rectangle.inflate_ip(10, 10)
+      pygame.display.update(rectangle.union(old_rectangle))
+      old_rectangle = rectangle
       # Info and flip screen
       # window.blit(font.render("fps: " + str(clock.get_fps()), 1, (255,255,255)), (0,0))
       # print "fps: " + str(clock.get_fps())
       # clock.tick(fps)
 
 # without input handling:
-# old_rect = pygame.draw.circle(window, (255, 0, 0), (0, 0), 20, 0)
+# old_rectangle = pygame.draw.circle(window, (255, 0, 0), (0, 0), 20, 0)
 # while True:
 #   # print event
 #   pygame.event.get()
-#   window.blit(image_surf, old_rect, old_rect)
+#   window.blit(image_surf, old_rectangle, old_rectangle)
 #   (mouse_x, mouse_y) = pygame.mouse.get_pos()
-#   rect = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 20, 0)
-#   rect.inflate_ip(10, 10)
-#   pygame.display.update(rect.union(old_rect))
-#   old_rect = rect
+#   rectangle = pygame.draw.circle(window, (255, 0, 0), (mouse_x, mouse_y), 20, 0)
+#   rectangle.inflate_ip(10, 10)
+#   pygame.display.update(rectangle.union(old_rectangle))
+#   old_rectangle = rectangle
 #   # Info and flip screen
 #   # window.blit(font.render("fps: " + str(clock.get_fps()), 1, (255,255,255)), (0,0))
 #   print "fps: " + str(clock.get_fps())
