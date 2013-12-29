@@ -7,6 +7,7 @@ import pygame
 from PIL import Image
 from PIL import ImageDraw
 from sys import exit
+import sys
 from pyx import *
 from pygame.locals import *
 # sudo apt-get install imagemagick
@@ -131,8 +132,8 @@ def draw_edge_to_pdf(prev_node_xy, node_xy, pdf, tile_nw, tile_se):
   pdf.stroke(path.line(prev_node_xy[0] - tile_nw[0],
                        -1*(prev_node_xy[1] - tile_se[1] - 1),
                        node_xy[0]      - tile_nw[0],
-                       -1*(node_xy[1]      - tile_se[1] - 1) ))
-
+                       -1*(node_xy[1]      - tile_se[1] - 1) ),
+             [style.linewidth(0.005), style.linecap.round])
 
 def is_node_hospital(node):
   is_hospital = False
@@ -177,7 +178,10 @@ def download_url(url_name):
 ##################
 ### TREE PARSE ###
 ##################
-tree = ET.parse('map.osm')      # print root.tag
+# print 'Number of arguments:', len(sys.argv), 'arguments.'
+# print 'Argument List:', str(sys.argv)
+tree = ET.parse(str(sys.argv[1]))
+# tree = ET.parse('map.osm')      # print root.tag
 root = tree.getroot()           # print root.attrib
 # for child in root:
 # print child.tag, child.attrib
@@ -191,7 +195,7 @@ map_bounds = parse_bounds(osm_bounds)
 
 # y direction -> latitude
 # x direction -> longitude
-zoom = 19
+zoom = 17 # use 19 for osm10, use 13 for osm20
 tile_nw = deg2num(map_bounds[1][0], map_bounds[0][1], zoom)
 tile_se = deg2num(map_bounds[0][0], map_bounds[1][1], zoom)
 print 'tile_nw_xy', tile_nw
@@ -243,7 +247,7 @@ c.insert(bitmap.bitmap(0, 0, map_image_node, height=(tile_se[1] - tile_nw[1] + 1
 
 for way in root.iter('way'):
   for tag in way.iter('tag'):
-    if tag.get('k') == "highway" and tag.get('v') == "residential":
+    if tag.get('k') == "highway":# and tag.get('v') == "residential":
       prev_node_xy = None
       for nd in way.iter('nd'):
         ref = nd.get('ref')
@@ -255,7 +259,7 @@ for way in root.iter('way'):
               rel_location = relative_location(node_xy, tile_nw, tile_se)
               draw_node_to_png2(rel_location, map_image_node)
               if prev_node_xy != None:
-                draw_edge_to_pdf(prev_node_xy, node_xy, c, tile_nw, tile_se)
+                # draw_edge_to_pdf(prev_node_xy, node_xy, c, tile_nw, tile_se)
                 prev_rel_loc = relative_location(prev_node_xy, tile_nw, tile_se)
                 draw_edge_to_png(prev_rel_loc, rel_location, map_image_node)
               break
@@ -266,6 +270,104 @@ for way in root.iter('way'):
 c.writePDFfile("map_image_node") # PDF / EPS
 map_image_node.save("map_image_node.png")
 
+
+######################
+### BUILD MATRICES ###
+######################
+
+def check_nodes_diff(root):
+  i = 0
+  for node in root.iter('node'):
+    i += 1
+  node_ids = [None for j in range(i)]
+  i = 0
+  for node in root.iter('node'):
+    node_ids[i] = node.get('id')
+    i += 1
+  set_node_ids = set(node_ids)
+  # print node_ids.__len__()
+  # print set_node_ids.__len__()
+  if node_ids.__len__() == set_node_ids.__len__():
+    return True
+  else:
+    return False
+
+# print check_nodes_diff(root)
+
+def build_matrices(root):
+  i = 0
+  for node in root.iter('node'):
+    i += 1
+  node_label = [None for j in range(i)]
+  node_lat   = [None for j in range(i)]
+  node_lon   = [None for j in range(i)]
+  i = 0
+  for node in root.iter('node'):
+    node_label[i] = node.get('id')
+    node_lat[i]   = float(node.get('lat'))
+    node_lon[i]   = float(node.get('lon'))
+    i += 1
+  adj_matrix = [[0 for j in range(i)] for k in range(i)]
+  return (node_label, adj_matrix, node_lat, node_lon)
+
+def add_node_adjancecy(node_label, adj_matrix, current_node_id, prev_node_id):
+  current_node_idx = node_label.index(current_node_id)
+  connect_node_idx = node_label.index(prev_node_id)
+  adj_matrix[current_node_idx][connect_node_idx] = 1 # symmetric
+  adj_matrix[connect_node_idx][current_node_idx] = 1 # symmetric
+
+
+(node_label, adj_matrix, node_lat, node_lon) = build_matrices(root)
+print adj_matrix.__len__()
+
+# connecting to the previous for all nodes seems to be enough,
+# it seems linking with the next is covered by taking all nodes
+# into consideration because the connection to the next will be
+# equivalent to a connection to a previous node, for some node.
+for node in root.iter('node'):
+  current_node_id = node.get('id')
+  for way in root.iter('way'):
+    for tag in way.iter('tag'):
+      if tag.get('k') == "highway":# and tag.get('v') == "residential":
+        way_nd_prev = None
+        connect_to_next = False
+        for nd in way.iter('nd'):
+          node_id = nd.get('ref')
+          if connect_to_next == True:
+            add_node_adjancecy(node_label, adj_matrix,
+                               current_node_id, node_id)
+            connect_to_next = False
+          if current_node_id == node_id:
+            connect_to_next = True
+            if way_nd_prev != None:
+              add_node_adjancecy(node_label, adj_matrix,
+                                 current_node_id, way_nd_prev.get('ref'))
+          way_nd_prev = nd
+        break
+
+print sum(sum(x) for x in adj_matrix)
+
+for idx1, row in enumerate(adj_matrix):
+  for idx2, node in enumerate(row):
+    if adj_matrix[idx1][idx2] == 1: # and idx2 >= idx1
+      print node_label[idx1]
+      node_lat1 = node_lat[idx1]
+      node_lon1 = node_lon[idx1]
+      node_lat2 = node_lat[idx2]
+      node_lon2 = node_lon[idx2]
+      node_xy1 = deg2pos(node_lat1, node_lon1, zoom)
+      node_xy2 = deg2pos(node_lat2, node_lon2, zoom)
+      # rel_location = relative_location(node_xy, tile_nw, tile_se)
+      # draw_node_to_png2(rel_location, map_image_node)
+      draw_edge_to_pdf(node_xy1, node_xy2, c, tile_nw, tile_se)
+      # node_xy1_rel = relative_location(node_xy1, tile_nw, tile_se)
+      # node_xy2_rel = relative_location(node_xy2, tile_nw, tile_se)
+      # draw_edge_to_png(node_xy1_rel, node_xy2_rel, map_image_node)
+
+
+c.writePDFfile("map_image_node")
+
+exit(0)
 ##########################
 ### INTERACTIVE WINDOW ###
 ##########################
